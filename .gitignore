@@ -92,3 +92,7 @@ Thumbs.db
 
 # Google Drive sync
 .gdrive/
+
+
+# Claude code
+.claude/
