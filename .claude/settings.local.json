@@ -4,7 +4,9 @@
       "WebFetch(domain:ai.google.dev)",
       "Bash(mkdir:*)",
       "Bash(mv:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(ls:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

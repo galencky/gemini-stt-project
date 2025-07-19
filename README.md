@@ -72,20 +72,54 @@ This will verify:
 
 ## Usage
 
+### Basic Usage
 Run the main script:
 ```bash
 python main.py
 ```
 
-The script will:
-1. Process local video files and extract audio (if enabled)
-2. Download audio files from Google Drive
-3. Transcribe all audio using Gemini (with automatic chunking)
-4. Parse the transcripts
-5. Generate summaries
-6. Upload to HackMD (if configured)
-7. Send email notifications (if configured)
-8. Upload results back to Google Drive
+### Smart Pipeline (Recommended)
+The smart pipeline tracks processing state and can resume from any stage:
+
+```bash
+# First run - process everything
+python main_v2.py
+
+# Resume mode - skip completed stages
+python main_v2.py --resume
+
+# Check pipeline status
+python main_v2.py --status
+
+# Force reprocess specific files
+python main_v2.py --resume --force audio1 audio2
+```
+
+**Windows users can use:**
+- `run_smart.bat` - Run with resume enabled
+- `pipeline_status.bat` - Check status
+
+### How It Works
+
+The pipeline tracks the state of each file through these stages:
+1. **Audio Extraction** - Video → Audio (if enabled)
+2. **Transcription** - Audio → Raw transcript
+3. **Parsing** - Raw transcript → Parsed transcript  
+4. **Summarization** - Parsed transcript → Summary
+5. **HackMD Upload** - Summary → HackMD (if configured)
+6. **Drive Upload** - All files → Google Drive
+7. **Completed** - Fully processed
+
+With `--resume`, the pipeline:
+- Checks which stages are already complete
+- Verifies that output files still exist
+- Skips completed stages automatically
+- Only processes what's needed
+
+This is especially useful for:
+- Large batches that might be interrupted
+- Adding new files to an existing batch
+- Recovering from errors without reprocessing everything
 
 ### Video Processing
 

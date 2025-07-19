@@ -132,6 +132,17 @@ class GoogleDriveClient:
             
             media = MediaFileUpload(str(local_file_path), resumable=True)
             
+            # Check if parent folder is in a shared drive
+            parent_info = self.drive_service.files().get(
+                fileId=parent_folder_id,
+                fields="id,driveId",
+                supportsAllDrives=True
+            ).execute()
+            
+            if 'driveId' in parent_info:
+                # It's a shared drive folder
+                file_metadata['driveId'] = parent_info['driveId']
+            
             file = self.drive_service.files().create(
                 body=file_metadata,
                 media_body=media,

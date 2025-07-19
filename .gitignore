@@ -73,10 +73,12 @@ token.json
 
 # Output directories
 output/
+output_for_upload/
 results/
 parsed/
 markdown/
 uploaded/
+data/
 
 # Cache
 .cache/
