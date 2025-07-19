@@ -21,7 +21,7 @@ except ValueError as e:
     sys.exit(1)
 
 # Import modules
-from src.integrations import GoogleDriveClient, HackMDUploader, EmailSender
+from src.integrations import HackMDUploader, EmailSender
 from src.processors import (
     AudioProcessor, 
     VideoProcessor, 
@@ -52,18 +52,11 @@ class SmartPipeline:
         }
         
         # Initialize components lazily
-        self._drive_client = None
         self._transcriber = None
         self._parser = None
         self._summarizer = None
         self._uploader = None
         self._email_sender = None
-    
-    @property
-    def drive_client(self):
-        if not self._drive_client:
-            self._drive_client = GoogleDriveClient(config.GDRIVE_SERVICE_ACCOUNT_JSON)
-        return self._drive_client
     
     @property
     def transcriber(self):
@@ -141,17 +134,18 @@ class SmartPipeline:
             return self.state_manager.is_stage_complete(filename, stage)
     
     def _gather_all_audio_files(self) -> List[Path]:
-        """Gather all audio files from various sources."""
+        """Gather all audio files from local sources."""
         all_files = []
         
         # 1. Process local videos if enabled
-        if config.PROCESS_VIDEOS and config.VIDEO_INPUT_DIR:
+        if config.PROCESS_VIDEOS:
             extracted = self._process_local_videos()
             all_files.extend(extracted)
         
-        # 2. Download from Google Drive
-        downloaded = self._download_audio_files()
-        all_files.extend(downloaded)
+        # 2. Copy local audio files if enabled
+        if config.PROCESS_LOCAL_AUDIO:
+            copied = self._copy_local_audio_files()
+            all_files.extend(copied)
         
         # 3. Check existing files in inbox
         for ext in config.AUDIO_EXTENSIONS:
@@ -217,45 +211,56 @@ class SmartPipeline:
         
         return extracted_audio
     
-    def _download_audio_files(self) -> List[Path]:
-        """Download audio files from Google Drive."""
-        log("🔍 Checking Google Drive for audio files...")
+    def _copy_local_audio_files(self) -> List[Path]:
+        """Copy audio files from local audio input directory."""
+        import shutil
         
-        # List files in Drive
-        drive_files = self.drive_client.list_files_in_folder(config.TO_BE_TRANSCRIBED_FOLDER_ID)
-        audio_files = [f for f in drive_files 
-                      if any(f["name"].endswith(ext) for ext in config.AUDIO_EXTENSIONS)]
-        
-        if not audio_files:
-            log("   No audio files found in Google Drive")
+        audio_input_path = Path(config.AUDIO_INPUT_DIR)
+        if not audio_input_path.exists():
+            log(f"⚠️  Audio input directory not found: {audio_input_path}")
             return []
         
-        # Check which files need downloading
-        files_to_download = []
-        for file in audio_files:
-            local_path = config.INBOX_DIR / file["name"]
+        log("🔍 Checking local audio directory for files...")
+        
+        # Find audio files
+        audio_files = []
+        for ext in config.AUDIO_EXTENSIONS:
+            audio_files.extend(audio_input_path.glob(f"*{ext}"))
+        
+        if not audio_files:
+            log("   No audio files found in local directory")
+            return []
+        
+        # Check which files need copying
+        files_to_copy = []
+        for audio_file in audio_files:
+            local_path = config.INBOX_DIR / audio_file.name
             if not local_path.exists() or not self.resume:
-                files_to_download.append(file)
+                files_to_copy.append(audio_file)
         
-        if not files_to_download:
-            log(f"   All {len(audio_files)} files already downloaded")
-            return [config.INBOX_DIR / f["name"] for f in audio_files]
+        if not files_to_copy:
+            log(f"   All {len(audio_files)} files already copied")
+            return [config.INBOX_DIR / f.name for f in audio_files]
         
-        log(f"   Downloading {len(files_to_download)} new files...")
+        log(f"   Copying {len(files_to_copy)} new files...")
         
-        # Download only new files
-        downloaded = []
-        for file in files_to_download:
-            if self.drive_client.download_file(file["id"], file["name"], config.INBOX_DIR):
-                local_path = config.INBOX_DIR / file["name"]
-                downloaded.append(local_path)
+        # Copy only new files
+        copied = []
+        for audio_file in files_to_copy:
+            try:
+                local_path = config.INBOX_DIR / audio_file.name
+                shutil.copy2(audio_file, local_path)
+                log(f"   ✅ Copied: {audio_file.name}")
+                copied.append(local_path)
                 self.state_manager.mark_stage_complete(
                     local_path.stem,
                     PipelineStage.AUDIO_DOWNLOADED,
                     local_path
                 )
+            except Exception as e:
+                log(f"   ❌ Failed to copy {audio_file.name}: {e}")
         
-        return downloaded
+        return copied
     
     def process_transcriptions(self, audio_files: List[Path]) -> Dict[str, Path]:
         """Process only files that need transcription."""
@@ -350,11 +355,13 @@ class SmartPipeline:
         
         log(f"\n🤖 Processing {len(audio_files)} files for summarization...")
         
-        # Get system prompt
-        system_prompt = self.drive_client.get_document_text(config.SYSTEM_PROMPT_DOC_ID)
-        if not system_prompt:
-            log("❌ Failed to retrieve system prompt")
-            return {}
+        # Use default system prompt for medical transcription
+        system_prompt = """You are a medical transcription summarizer. Please:
+1. Create a structured summary with clear sections
+2. Preserve all medical terminology and drug names accurately
+3. Include timestamps for key events
+4. Format as markdown with appropriate headers
+5. Focus on diagnosis, treatment plans, and clinical findings"""
         
         if not self._summarizer:
             self._summarizer = Summarizer(config.GEMINI_API_KEY, system_prompt)
@@ -407,19 +414,25 @@ class SmartPipeline:
         # Analyze what needs to be done
         needs_processing = self.analyze_pipeline()
         
-        # Process each stage only for files that need it
+        # Process each stage progressively, re-analyzing after each stage
         
         # 1. Transcription
         if needs_processing["transcription"]:
             self.process_transcriptions(needs_processing["transcription"])
+            # Re-analyze after transcription to find files that now need parsing
+            needs_processing = self.analyze_pipeline()
         
         # 2. Parsing
         if needs_processing["parsing"]:
             self.process_parsing(needs_processing["parsing"])
+            # Re-analyze after parsing to find files that now need summarization
+            needs_processing = self.analyze_pipeline()
         
         # 3. Summarization
         if needs_processing["summarization"]:
             self.process_summaries(needs_processing["summarization"])
+            # Re-analyze after summarization
+            needs_processing = self.analyze_pipeline()
         
         # 4. HackMD Upload
         if needs_processing["hackmd_upload"] and config.HACKMD_TOKEN:
@@ -456,12 +469,11 @@ class SmartPipeline:
                         self._email_sender = EmailSender(config.EMAIL_USER, config.EMAIL_PASS)
                     self._email_sender.send_hackmd_links(config.EMAIL_TO, shared_links)
         
-        # 5. Google Drive Upload (SKIPPED - Manual upload mode)
+        # 5. Mark completed files
         if needs_processing["drive_upload"]:
-            log(f"\n📤 Skipping Google Drive upload (manual mode)...")
-            log(f"   {len(needs_processing['drive_upload'])} file sets ready for manual upload")
+            log(f"\n✅ Finalizing {len(needs_processing['drive_upload'])} processed file sets...")
             
-            # Mark as completed locally without uploading
+            # Mark as completed locally 
             for audio_file in needs_processing["drive_upload"]:
                 filename = audio_file.stem
                 
@@ -471,18 +483,14 @@ class SmartPipeline:
                 summary = config.MARKDOWN_DIR / f"{filename}.md"
                 
                 if all(f.exists() for f in [transcript, parsed, summary]):
-                    # Mark as complete without uploading
-                    self.state_manager.mark_stage_complete(
-                        filename,
-                        PipelineStage.DRIVE_UPLOADED
-                    )
+                    # Mark as complete
                     self.state_manager.mark_stage_complete(
                         filename,
                         PipelineStage.COMPLETED
                     )
                     self.stats["processed_stages"] += 1
             
-            log("\n   ℹ️  Run 'organize_files.bat' to prepare files for manual upload")
+            log("\n   ℹ️  All processing complete! Files ready for manual organization.")
         
         # Final report
         duration = time.time() - start_time
@@ -502,45 +510,6 @@ class SmartPipeline:
                           if PipelineStage.COMPLETED.value in s["stages_completed"])
             log(f"\n📊 Pipeline State: {completed}/{len(summary)} files fully completed")
     
-    def _upload_single_result_to_drive(self, filename: str, transcript_path: Path) -> bool:
-        """Upload a single file's results to Drive."""
-        try:
-            # Create folder
-            folder_id = self.drive_client.ensure_subfolder(config.PROCESSED_FOLDER_ID, filename)
-            if not folder_id:
-                return False
-            
-            # Upload files
-            files_to_upload = [
-                transcript_path,
-                config.PARSED_DIR / f"{filename}_parsed.txt",
-                config.MARKDOWN_DIR / f"{filename}.md"
-            ]
-            
-            success = True
-            for file_path in files_to_upload:
-                if file_path.exists():
-                    if not self.drive_client.upload_file(file_path, folder_id):
-                        success = False
-            
-            # Move original audio if successful
-            if success:
-                audio_name = f"{filename}.{list(config.AUDIO_EXTENSIONS)[0]}"  # Approximate
-                audio_in_drive = self.drive_client.find_file_by_name(
-                    audio_name, 
-                    config.TO_BE_TRANSCRIBED_FOLDER_ID
-                )
-                if audio_in_drive:
-                    self.drive_client.move_file(
-                        audio_in_drive["id"],
-                        config.TRANSCRIBED_FOLDER_ID,
-                        config.TO_BE_TRANSCRIBED_FOLDER_ID
-                    )
-            
-            return success
-        except Exception as e:
-            log(f"❌ Error uploading {filename}: {e}")
-            return False
 
 
 def main():

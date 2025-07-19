@@ -77,7 +77,7 @@ def organize_files():
     
     # Create upload instructions
     instructions_file = output_dir / "UPLOAD_INSTRUCTIONS.txt"
-    with open(instructions_file, 'w') as f:
+    with open(instructions_file, 'w', encoding='utf-8') as f:
         f.write("Google Drive Upload Instructions\n")
         f.write("================================\n\n")
         f.write("1. Go to your Google Drive PROCESSED folder\n")
@@ -85,7 +85,7 @@ def organize_files():
         f.write("   - Create a new folder with the same name\n")
         f.write("   - Upload all files from that folder\n\n")
         f.write("3. After uploading, move the original audio files from:\n")
-        f.write("   TO_BE_TRANSCRIBED folder → TRANSCRIBED folder\n\n")
+        f.write("   TO_BE_TRANSCRIBED folder -> TRANSCRIBED folder\n\n")
         f.write("Folders to upload:\n")
         f.write("-----------------\n")
         

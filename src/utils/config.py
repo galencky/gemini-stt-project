@@ -29,16 +29,18 @@ AUDIO_EXTENSIONS = {'.wav', '.mp3', '.m4a', '.flac', '.ogg', '.webm', '.aac', '.
 # File Management Configuration
 DELETE_LOCAL_FILES_AFTER_UPLOAD = os.getenv('DELETE_LOCAL_FILES_AFTER_UPLOAD', 'false').lower() == 'true'
 
-# Video Processing Configuration
-VIDEO_INPUT_DIR = os.getenv('VIDEO_INPUT_DIR', '')
+# Local Processing Configuration
+VIDEO_INPUT_DIR = os.getenv('VIDEO_INPUT_DIR', r'C:\Users\galen\Videos\audio_strip')
+AUDIO_INPUT_DIR = os.getenv('AUDIO_INPUT_DIR', r'C:\Users\galen\Videos\audio_strip\audio_only')
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg'}
-PROCESS_VIDEOS = os.getenv('PROCESS_VIDEOS', 'false').lower() == 'true'
+PROCESS_VIDEOS = os.getenv('PROCESS_VIDEOS', 'true').lower() == 'true'  # Default to true
+PROCESS_LOCAL_AUDIO = os.getenv('PROCESS_LOCAL_AUDIO', 'true').lower() == 'true'  # Default to true
 VIDEO_AUDIO_FORMAT = os.getenv('VIDEO_AUDIO_FORMAT', 'm4a')  # Output format for extracted audio
 VIDEO_AUDIO_BITRATE = os.getenv('VIDEO_AUDIO_BITRATE', '192k')
 VIDEO_AUDIO_SAMPLERATE = int(os.getenv('VIDEO_AUDIO_SAMPLERATE', '44100'))
 
-# Paths Configuration
-BASE_DIR = Path(__file__).parent
+# Paths Configuration  
+BASE_DIR = Path(__file__).parent.parent.parent  # Go up to project root
 DATA_DIR = BASE_DIR / 'data'
 INBOX_DIR = DATA_DIR / 'inbox'
 TRANSCRIPTS_DIR = DATA_DIR / 'transcripts'
@@ -59,10 +61,6 @@ def validate_config():
     # Check required environment variables
     required_vars = {
         'GEMINI_API_KEY': GEMINI_API_KEY,
-        'GDRIVE_SERVICE_ACCOUNT_JSON': GDRIVE_SERVICE_ACCOUNT_JSON,
-        'TO_BE_TRANSCRIBED_FOLDER_ID': TO_BE_TRANSCRIBED_FOLDER_ID,
-        'TRANSCRIBED_FOLDER_ID': TRANSCRIBED_FOLDER_ID,
-        'PROCESSED_FOLDER_ID': PROCESSED_FOLDER_ID,
     }
     
     missing_vars = [var for var, value in required_vars.items() if not value]
@@ -70,29 +68,16 @@ def validate_config():
     if missing_vars:
         errors.append(f"Missing required environment variables: {', '.join(missing_vars)}")
     
-    # Check if service account JSON is valid (can be JSON string or file path)
-    if GDRIVE_SERVICE_ACCOUNT_JSON:
-        import json
-        # Try to parse as JSON first
-        try:
-            json.loads(GDRIVE_SERVICE_ACCOUNT_JSON)
-            # It's valid JSON content
-        except json.JSONDecodeError:
-            # Not JSON, check if it's a valid file path
-            sa_path = Path(GDRIVE_SERVICE_ACCOUNT_JSON)
-            if not sa_path.exists():
-                errors.append(f"Google Drive service account is neither valid JSON nor an existing file: {GDRIVE_SERVICE_ACCOUNT_JSON[:50]}...")
-            elif not sa_path.is_file():
-                errors.append(f"Service account path exists but is not a file: {GDRIVE_SERVICE_ACCOUNT_JSON}")
-    
-    # Check video processing configuration if enabled
+    # Check local processing configuration
     if PROCESS_VIDEOS:
-        if not VIDEO_INPUT_DIR:
-            errors.append("VIDEO_INPUT_DIR must be set when PROCESS_VIDEOS is true")
-        else:
-            video_path = Path(VIDEO_INPUT_DIR)
-            if not video_path.exists():
-                errors.append(f"Video input directory not found: {VIDEO_INPUT_DIR}")
+        video_path = Path(VIDEO_INPUT_DIR)
+        if not video_path.exists():
+            errors.append(f"Video input directory not found: {VIDEO_INPUT_DIR}")
+    
+    if PROCESS_LOCAL_AUDIO:
+        audio_path = Path(AUDIO_INPUT_DIR)
+        if not audio_path.exists():
+            errors.append(f"Audio input directory not found: {AUDIO_INPUT_DIR}")
     
     if errors:
         error_msg = "\n".join(f"  - {err}" for err in errors)
