@@ -3,7 +3,8 @@
     "allow": [
       "WebFetch(domain:ai.google.dev)",
       "Bash(mkdir:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
