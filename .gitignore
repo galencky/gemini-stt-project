@@ -39,7 +39,7 @@ env/
 .env.local
 .env.*.local
 
-# Audio files (privacy)
+# Audio/Video files (privacy)
 inbox/
 transcribed/
 transcripts/
@@ -50,6 +50,12 @@ transcripts/
 *.ogg
 *.aac
 *.webm
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
 
 # Temporary files
 *.tmp
@@ -71,7 +77,8 @@ logs/
 credentials.json
 token.json
 
-# Output directories
+# Working directories
+working/
 output/
 output_for_upload/
 results/
